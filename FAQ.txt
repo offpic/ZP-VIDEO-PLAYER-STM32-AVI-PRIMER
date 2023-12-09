@@ -1,0 +1,44 @@
+ZP VideoPlayer technical notes & FAQ 
+build 0252
+
+
+
+The program source files should be compiled with a -O3  optimization (i.e. Level3 ).
+
+AVI file size must be less than 2GB as per AVI 1.x specification. 
+
+
+FAQ
+
+Q. Why "termf" and "stringf" functions are used instead of, e.g. "printf" and "sprintf"?
+A. Just historically. I started with a STM32 in the Atollic Lite environment. This was a quite powerful IDE with no restriction for code size but wihout IO redirection (putchar is linked to a dummy), only one breakpoint and without optimization. And from that time on I always use the Georges Menie's printf2.c file you can easily find on the net. It is used for debugging and formatted output (f.e. to LCD).
+
+Q. What is a FZP font?
+A. Several years ago I decided to write my own font generation program.  It allows to generate fonts from any other ttf or OpenType fonts,  convert to FZP any of unicode pages, take as input pictures (not only predefined fonts but of any type), save font as only several or only one single letter in arbitrary order, generate compact or monospace fonts. Any font letter can be edited, inverted etc. But this job was not finished (that time wanted to implement a some kind of shrinking algorithm). As a result I can convert (just in a minute) or take as a base any existing font or create a new one from scratch but the font program, although it is working fine, has no friendly interface, nor clear documentation.
+
+
+Q. What is the reason for a jerking sound and/or video?
+A. ZP VideoPlayer can not play the 320x240 video with the 24 fps framerate. If a video stream is encoded with such framerate it does mean that an interleaved sound chunk must be pumped up to the audio decoder every 41ms in case of 22050 Hz 16 bit stereo. But the TJPEGD decoder can not decode 320x240 video for 41ms and this leads to a huge audio jitter heard as a jerking and popping sound.
+If the 320x240 video stream is encoded with 12 fps this means that a half of video frames is removed from the source and this can produce jerking frames in the short parts of video. If you play this video stream on a powerful PC you will see the same effect. But it depends on video how noticeable this effect is. Many movies and cartoons will look quite good.
+ 
+You can amend the balance between the video and sound quality. It depends on a "skipped frame" strategy, i.e. you have to find the optimal criteria when it is worth to skip the next video frame to keep the audio jitter minimal.
+
+Here is a code used to calculate this criteria, called every audio/video frame (in main.c):
+
+
+stream_delay = ( ms_elapsed  - ms_required );
+if (( stream_delay > 0 ) &&  ( stream_delay > ( us_per_frame / SKIP_FRAME_DIV ) ))  skip_frame = true;
+
+The best case is when stream_delay is equal to zero or negative. It means we decode fast enough and no audio/video jitter will occur (at least no more than 1ms as a referenced time slice though it is big enough for sound). If stream_delay is positive than we may not be able to send required audio data in time, so the very audible audio jitter is quite possible (i.e. there is a large gap between consequent audio chunks). 
+
+The value SKIP_FRAME_DIV (defined in zpconfig.h) is responsible for the maximum stream_delay positive value before the next videoframe will be skipped. The value SKIP_FRAME_DIV = 1000 means that next videoframe will be skipped if stream_delay becomes more than one videoframe default time length. The value SKIP_FRAME_DIV = 2 * 1000 means 
+that next videoframe will be skipped if stream_delay becomes more than a half videoframe time length. So when the SKIP_FRAME_DIV is growing, the more video frames will be played and the risk of audio jitter is increasing as well. And vice versa. You can play with this to get the best result. 
+
+
+The better solution is not to use a systick 1ms as a referenced time counter but to start generating interrupts/events by some of general timer with a period equal to us_per_frame and process the audio data based on these interrupts/events to prevent audio jitter.
+
+
+
+ZP
+
+  
